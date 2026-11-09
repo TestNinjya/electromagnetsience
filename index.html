@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ラジオのスピーカーと電磁石のひみつ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #f0f9ff;
+        }
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col justify-between">
+
+    <!-- ヘッダー -->
+    <header class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 shadow-md">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="bg-amber-400 text-slate-900 font-black px-2 py-0.5 rounded-lg text-sm shadow">小5理科</span>
+                <h1 class="text-lg sm:text-xl font-black">ラジオのスピーカーと「電磁石」のひみつ</h1>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-xs bg-white/20 px-3 py-1 rounded-full font-bold hidden sm:inline-block">授業用デモ教材</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="max-w-4xl w-full mx-auto p-4 flex-grow flex flex-col gap-4">
+
+        <div class="bg-white rounded-3xl p-4 shadow-xl border-4 border-indigo-100 flex flex-col gap-3">
+            
+            <!-- インジケーター -->
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-2.5 rounded-2xl border border-slate-200">
+                <div class="px-3 py-1 rounded-full text-xs font-black bg-blue-600 text-white shadow-sm flex items-center gap-1.5">
+                    <i class="fa-solid fa-bolt"></i> 右側の回路から伸びる電線（色の切り替え・矢印）に注目！
+                </div>
+                <div class="text-xs sm:text-sm font-bold text-slate-700">
+                    現在の状態: <span id="polarDisplay" class="text-slate-900 font-black text-sm sm:text-base">−</span>
+                </div>
+            </div>
+
+            <!-- キャンバス -->
+            <div class="relative w-full aspect-[16/9] sm:aspect-[2/1] bg-slate-900 rounded-2xl overflow-hidden shadow-inner border-2 border-slate-700">
+                <canvas id="mainCanvas" class="w-full h-full block"></canvas>
+            </div>
+
+            <!-- コントロール（自動再生・スピード調整・サウンド） -->
+            <div class="bg-indigo-50 p-3 rounded-2xl border-2 border-indigo-100 flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button id="btnPlayPause" class="py-2 px-4 bg-indigo-600 text-white font-black text-sm rounded-xl shadow hover:bg-indigo-700 active:scale-95 transition flex items-center gap-2">
+                        <i class="fa-solid fa-pause" id="playIcon"></i> <span id="playText">一時停止</span>
+                    </button>
+                    <button id="btnSoundToggle" class="py-2 px-3 bg-amber-500 text-white font-bold text-xs sm:text-sm rounded-xl hover:bg-amber-600 transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-volume-xmark" id="soundIcon"></i> <span id="soundText">音をつける</span>
+                    </button>
+                    <button id="btnManualSwitch" class="py-2 px-3 bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm rounded-xl hover:bg-slate-300 transition">
+                        手動で反転
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-3 flex-grow max-w-xs">
+                    <span class="text-xs font-bold text-slate-600 whitespace-nowrap">切り替えスピード:</span>
+                    <input type="range" id="speedSlider" min="0.5" max="3" step="0.1" value="1" class="w-full accent-indigo-600 cursor-pointer">
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- フッター -->
+    <footer class="bg-slate-800 text-slate-400 text-xs py-4 text-center">
+        <p class="font-bold text-slate-300 mb-1">小学校5年生 理科「電磁石の性質・スピーカーの仕組み」デモ用WEB教材</p>
+        <p class="text-slate-500">※ブラウザ（Chrome, Safari, Edgeなど）でそのまま開いてアクセス可能です。</p>
+    </footer>
+
+    <!-- JS -->
+    <script>
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const btnPlayPause = document.getElementById('btnPlayPause');
+        const playIcon = document.getElementById('playIcon');
+        const playText = document.getElementById('playText');
+        const btnSoundToggle = document.getElementById('btnSoundToggle');
+        const soundIcon = document.getElementById('soundIcon');
+        const soundText = document.getElementById('soundText');
+        const btnManualSwitch = document.getElementById('btnManualSwitch');
+        const speedSlider = document.getElementById('speedSlider');
+        const polarDisplay = document.getElementById('polarDisplay');
+
+        let isPlaying = true;
+        let isForward = true;
+        let isSoundOn = false;
+        let timer = null;
+
+        // Web Audio API
+        let audioCtx = null;
+        let continuousOsc = null;
+        let continuousGain = null;
+
+        function updateAudioPitch() {
+            if (!audioCtx || !continuousOsc || !isSoundOn) return;
+            const baseFreq = 160;
+            const targetFreq = baseFreq * parseFloat(speedSlider.value);
+            continuousOsc.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.05);
+        }
+
+        function startContinuousSound() {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                if (!continuousOsc) {
+                    continuousOsc = audioCtx.createOscillator();
+                    continuousGain = audioCtx.createGain();
+
+                    continuousOsc.type = 'sine';
+                    continuousOsc.frequency.setValueAtTime(160 * parseFloat(speedSlider.value), audioCtx.currentTime);
+                    continuousGain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+
+                    continuousOsc.connect(continuousGain);
+                    continuousGain.connect(audioCtx.destination);
+
+                    continuousOsc.start();
+                } else {
+                    continuousGain.gain.setTargetAtTime(0.08, audioCtx.currentTime, 0.05);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function stopContinuousSound() {
+            if (continuousGain && audioCtx) {
+                continuousGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+            }
+        }
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function toggleSwitch() {
+            isForward = !isForward;
+            draw();
+        }
+
+        function updateTimer() {
+            if (timer) clearInterval(timer);
+            if (isPlaying) {
+                const interval = 1000 / parseFloat(speedSlider.value);
+                timer = setInterval(toggleSwitch, interval);
+            }
+            updateAudioPitch();
+        }
+
+        btnPlayPause.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                playIcon.className = "fa-solid fa-pause";
+                playText.innerText = "一時停止";
+                if (isSoundOn) startContinuousSound();
+            } else {
+                playIcon.className = "fa-solid fa-play";
+                playText.innerText = "再生";
+                stopContinuousSound();
+            }
+            updateTimer();
+        });
+
+        btnSoundToggle.addEventListener('click', () => {
+            isSoundOn = !isSoundOn;
+            if (isSoundOn) {
+                startContinuousSound();
+                soundIcon.className = "fa-solid fa-volume-high";
+                soundText.innerText = "音を消す";
+                btnSoundToggle.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+                btnSoundToggle.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+            } else {
+                stopContinuousSound();
+                soundIcon.className = "fa-solid fa-volume-xmark";
+                soundText.innerText = "音をつける";
+                btnSoundToggle.classList.remove('bg-emerald-600', 'hover:bg-emerald-700');
+                btnSoundToggle.classList.add('bg-amber-500', 'hover:bg-amber-600');
+            }
+        });
+
+        btnManualSwitch.addEventListener('click', () => {
+            toggleSwitch();
+        });
+
+        speedSlider.addEventListener('input', updateTimer);
+
+        function draw() {
+            const w = canvas.getBoundingClientRect().width;
+            const h = canvas.getBoundingClientRect().height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // 背景
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, w, h);
+
+            // テキストインジケーターの更新（S:赤, N:青に統一）
+            if (isForward) {
+                polarDisplay.innerHTML = `<span class="text-rose-500 font-bold">【Aパターン】</span> コイル左側: <b class="text-rose-500">S極</b> (ひき合う)`;
+            } else {
+                polarDisplay.innerHTML = `<span class="text-blue-500 font-bold">【Bパターン】</span> コイル左側: <b class="text-blue-500">N極</b> (はんぱつする)`;
+            }
+
+            const centerX = w * 0.45;
+            const centerY = h * 0.5;
+
+            // コイル（電磁石）の位置
+            const coilShiftX = isForward ? -25 : 25;
+            const coilX = centerX + coilShiftX;
+
+            // --- 1. 固定フレームと固定コーン（膜） ---
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 4;
+            
+            // スピーカーフレームの外枠
+            ctx.beginPath();
+            ctx.moveTo(w * 0.1, h * 0.15);
+            ctx.lineTo(w * 0.28, h * 0.35);
+            ctx.lineTo(w * 0.28, h * 0.65);
+            ctx.lineTo(w * 0.1, h * 0.85);
+            ctx.stroke();
+
+            // スピーカーコーン（膜）
+            ctx.fillStyle = '#334155';
+            ctx.beginPath();
+            ctx.moveTo(w * 0.1, h * 0.15);
+            ctx.lineTo(coilX - 40, h * 0.38);
+            ctx.lineTo(coilX - 40, h * 0.62);
+            ctx.lineTo(w * 0.1, h * 0.85);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // --- 2. 固定された永久磁石 ---
+            const pmWidth = 90;
+            const pmHeight = 60;
+            const pmX = w * 0.65;
+            const pmY = centerY - pmHeight / 2;
+
+            // S極 (左側・赤)
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(pmX, pmY, pmWidth / 2, pmHeight);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('S', pmX + pmWidth / 4, centerY);
+
+            // N極 (右側・青)
+            ctx.fillStyle = '#2563eb';
+            ctx.fillRect(pmX + pmWidth / 2, pmY, pmWidth / 2, pmHeight);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('N', pmX + (pmWidth * 3) / 4, centerY);
+
+            // 永久磁石のラベル
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillText('永久磁石 (固定)', pmX + pmWidth / 2, pmY - 15);
+
+            // --- 3. 動き回る電磁石 (コイル) ---
+            const cWidth = 90;
+            const cHeight = 50;
+            const cY = centerY - cHeight / 2;
+
+            // コイルボビン
+            ctx.fillStyle = '#1e293b';
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 2;
+            ctx.fillRect(coilX - cWidth / 2, cY, cWidth, cHeight);
+            ctx.strokeRect(coilX - cWidth / 2, cY, cWidth, cHeight);
+
+            // コイル極性の表示（N:青 #2563eb, S:赤 #ef4444 に統一）
+            const leftPolarityColor = isForward ? '#ef4444' : '#2563eb';
+            const leftPolarityText = isForward ? 'S' : 'N';
+            const rightPolarityColor = isForward ? '#2563eb' : '#ef4444';
+            const rightPolarityText = isForward ? 'N' : 'S';
+
+            // コイル左端
+            ctx.fillStyle = leftPolarityColor;
+            ctx.fillRect(coilX - cWidth / 2, cY, 25, cHeight);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillText(leftPolarityText, coilX - cWidth / 2 + 12.5, centerY);
+
+            // コイル右端
+            ctx.fillStyle = rightPolarityColor;
+            ctx.fillRect(coilX + cWidth / 2 - 25, cY, 25, cHeight);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(rightPolarityText, coilX + cWidth / 2 - 12.5, centerY);
+
+            // 巻き線
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 3;
+            for (let i = -15; i <= 15; i += 8) {
+                ctx.beginPath();
+                ctx.arc(coilX + i, centerY, 22, -Math.PI / 2, Math.PI / 2);
+                ctx.stroke();
+            }
+
+            // 電磁石のラベル
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.fillText('動く電磁石 (コイル)', coilX, cY - 15);
+
+            // --- 4. 右側のラジオ本体（回路）ボックス ---
+            const radioX = w * 0.84;
+            const radioY = h * 0.15;
+            const radioW = w * 0.13;
+            const radioH = h * 0.7;
+
+            ctx.fillStyle = '#1e293b';
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 3;
+            ctx.fillRect(radioX, radioY, radioW, radioH);
+            ctx.strokeRect(radioX, radioY, radioW, radioH);
+
+            ctx.fillStyle = '#60a5fa';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillText('ラジオ', radioX + radioW / 2, radioY + 20);
+            ctx.fillText('本体回路', radioX + radioW / 2, radioY + 38);
+
+            // --- 5. 右側の回路から伸びる電線 ---
+            const wire1Color = isForward ? '#ef4444' : '#3b82f6'; // 上側の線
+            const wire2Color = isForward ? '#3b82f6' : '#ef4444'; // 下側の線
+
+            ctx.lineWidth = 4;
+            
+            // 上の電線（右の回路 ➔ コイルの上へ）
+            ctx.strokeStyle = wire1Color;
+            ctx.beginPath();
+            ctx.moveTo(radioX, h * 0.25);
+            ctx.lineTo(coilX + 10, h * 0.25);
+            ctx.lineTo(coilX + 10, cY);
+            ctx.stroke();
+
+            // 下の電線（右の回路 ➔ コイルの下へ）
+            ctx.strokeStyle = wire2Color;
+            ctx.beginPath();
+            ctx.moveTo(radioX, h * 0.75);
+            ctx.lineTo(coilX - 10, h * 0.75);
+            ctx.lineTo(coilX - 10, cY + cHeight);
+            ctx.stroke();
+
+            // 電流の向きのテキスト・矢印
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'center';
+            if (isForward) {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillText('⟵ 電流', (radioX + coilX) / 2, h * 0.21);
+                ctx.fillStyle = '#3b82f6';
+                ctx.fillText('戻り ➔', (radioX + coilX) / 2, h * 0.79);
+            } else {
+                ctx.fillStyle = '#3b82f6';
+                ctx.fillText('戻り ➔', (radioX + coilX) / 2, h * 0.21);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillText('⟵ 電流', (radioX + coilX) / 2, h * 0.79);
+            }
+
+            // 音波
+            if (isPlaying) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(w * 0.08, centerY, 30, -Math.PI / 3, Math.PI / 3);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(w * 0.04, centerY, 50, -Math.PI / 3, Math.PI / 3);
+                ctx.stroke();
+            }
+        }
+
+        // 初期化
+        resizeCanvas();
+        updateTimer();
+    </script>
+</body>
+</html>
